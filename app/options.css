@@ -1,0 +1,211 @@
+:root {
+  --primary: #4285f4;
+  --primary-hover: #3367d6;
+  --danger: #ea4335;
+  --success: #34a853;
+  --bg: #ffffff;
+  --text: #202124;
+  --text-secondary: #5f6368;
+  --border: #dadce0;
+  --hover-bg: #f1f3f4;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--hover-bg);
+  font-size: 14px;
+  padding: 24px;
+}
+
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.fav-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.fav-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fav-card-name {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  outline: none;
+}
+
+.fav-card-name:focus {
+  border-color: var(--primary);
+}
+
+.fav-card-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.fav-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--hover-bg);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: #fce8e6;
+}
+
+.url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.url-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+}
+
+.url-input:focus {
+  border-color: var(--primary);
+}
+
+.url-remove {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.url-remove:hover {
+  background: #fce8e6;
+}
+
+.url-add {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 4px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.url-add:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.empty-msg {
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.empty-msg.hidden {
+  display: none;
+}
+
+.status {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.status.visible {
+  opacity: 1;
+}
+
+.status.success {
+  color: var(--success);
+  background: #e6f4ea;
+  border: 1px solid var(--success);
+}
+
+.status.error {
+  color: var(--danger);
+  background: #fce8e6;
+  border: 1px solid var(--danger);
+}

@@ -11,6 +11,15 @@ function init() {
   document.getElementById('sort-by-url').addEventListener('click', sortTabsByUrl);
   document.getElementById('close-duplicates').addEventListener('click', closeDuplicateTabs);
   document.getElementById('close-others').addEventListener('click', closeOtherTabs);
+  document.getElementById('fav-save-btn').addEventListener('click', saveFavorite);
+  document.getElementById('fav-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveFavorite();
+  });
+  document.getElementById('open-options').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+  renderFavorites();
   renderTabList();
 }
 
@@ -192,6 +201,93 @@ async function renderTabList() {
     group.appendChild(list);
     section.appendChild(group);
   }
+}
+
+// --- Favorites ---
+
+async function saveFavorite() {
+  const input = document.getElementById('fav-name');
+  const name = input.value.trim();
+  if (!name) {
+    showStatus('お気に入り名を入力してください', 'error');
+    input.focus();
+    return;
+  }
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const urls = filterUrls(tabs);
+  if (urls.length === 0) {
+    showStatus('保存できるURLがありません', 'error');
+    return;
+  }
+  const { favorites = [] } = await chrome.storage.sync.get('favorites');
+  favorites.push({ name, urls, createdAt: Date.now() });
+  await chrome.storage.sync.set({ favorites });
+  input.value = '';
+  showStatus(`「${name}」を保存しました（${urls.length}個）`);
+  renderFavorites();
+}
+
+async function renderFavorites() {
+  const container = document.getElementById('fav-list');
+  const { favorites = [] } = await chrome.storage.sync.get('favorites');
+  container.innerHTML = '';
+  if (favorites.length === 0) return;
+  container.className = 'fav-list';
+  for (let i = 0; i < favorites.length; i++) {
+    const fav = favorites[i];
+    const item = document.createElement('div');
+    item.className = 'fav-item';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'fav-name';
+    nameEl.textContent = fav.name;
+
+    const countEl = document.createElement('span');
+    countEl.className = 'fav-count';
+    countEl.textContent = `(${fav.urls.length}個)`;
+
+    const actions = document.createElement('div');
+    actions.className = 'fav-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.className = 'fav-action-btn';
+    openBtn.textContent = '開く';
+    openBtn.addEventListener('click', () => openFavorite(i));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'fav-action-btn delete';
+    deleteBtn.textContent = '✕';
+    deleteBtn.addEventListener('click', () => deleteFavorite(i));
+
+    actions.appendChild(openBtn);
+    actions.appendChild(deleteBtn);
+    item.appendChild(nameEl);
+    item.appendChild(countEl);
+    item.appendChild(actions);
+    container.appendChild(item);
+  }
+}
+
+async function openFavorite(index) {
+  const { favorites = [] } = await chrome.storage.sync.get('favorites');
+  const fav = favorites[index];
+  if (!fav) return;
+  const win = await chrome.windows.create({ url: fav.urls[0] });
+  for (let i = 1; i < fav.urls.length; i++) {
+    await chrome.tabs.create({ windowId: win.id, url: fav.urls[i], active: false });
+  }
+  showStatus(`「${fav.name}」を開きました`);
+}
+
+async function deleteFavorite(index) {
+  const { favorites = [] } = await chrome.storage.sync.get('favorites');
+  const fav = favorites[index];
+  if (!fav) return;
+  if (!confirm(`「${fav.name}」を削除しますか？`)) return;
+  favorites.splice(index, 1);
+  await chrome.storage.sync.set({ favorites });
+  showStatus(`「${fav.name}」を削除しました`);
+  renderFavorites();
 }
 
 function extractUrls(text) {
