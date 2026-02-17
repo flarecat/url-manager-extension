@@ -5,9 +5,11 @@
   "description": "開いているページのURLを管理できるChrome拡張機能",
   "permissions": [
     "tabs",
+    "tabGroups",
     "storage",
     "clipboardRead",
-    "clipboardWrite"
+    "clipboardWrite",
+    "sidePanel"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -16,6 +18,12 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "options_page": "options.html",
   "icons": {

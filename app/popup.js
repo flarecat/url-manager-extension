@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', init);
 
+const isSidePanel = document.body.classList.contains('sidepanel');
 let scope = 'current'; // 'current' | 'all'
 
 function init() {
@@ -19,8 +20,27 @@ function init() {
     e.preventDefault();
     chrome.runtime.openOptionsPage();
   });
+  const openSidePanelBtn = document.getElementById('open-sidepanel');
+  if (openSidePanelBtn) {
+    openSidePanelBtn.addEventListener('click', openSidePanel);
+  }
   renderFavorites();
   renderTabList();
+
+  // Side panel: auto-refresh on tab changes (debounced)
+  if (isSidePanel) {
+    let refreshTimer = null;
+    const debouncedRefresh = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(renderTabList, 300);
+    };
+    chrome.tabs.onCreated.addListener(debouncedRefresh);
+    chrome.tabs.onRemoved.addListener(debouncedRefresh);
+    chrome.tabs.onMoved.addListener(debouncedRefresh);
+    chrome.tabs.onUpdated.addListener(debouncedRefresh);
+    chrome.tabs.onActivated.addListener(debouncedRefresh);
+    chrome.windows.onFocusChanged.addListener(debouncedRefresh);
+  }
 }
 
 function setScope(newScope) {
@@ -129,9 +149,29 @@ async function closeOtherTabs() {
   renderTabList();
 }
 
+// --- Accordion state (persists across re-renders) ---
+// Keys: "window:<id>" or "tabgroup:<id>", Values: true=expanded
+const accordionState = new Map();
+
+// --- Tab group info cache ---
+const tabGroupCache = new Map();
+
+async function getTabGroupInfo(groupId) {
+  if (groupId === -1 || groupId === undefined) return null;
+  if (tabGroupCache.has(groupId)) return tabGroupCache.get(groupId);
+  try {
+    const info = await chrome.tabGroups.get(groupId);
+    tabGroupCache.set(groupId, info);
+    return info;
+  } catch {
+    return null;
+  }
+}
+
 async function renderTabList() {
   const section = document.getElementById('tab-section');
   section.innerHTML = '';
+  tabGroupCache.clear();
 
   const currentWindow = await chrome.windows.getCurrent();
   const allTabs = await chrome.tabs.query({});
@@ -163,44 +203,345 @@ async function renderTabList() {
     const tabs = windowMap.get(winId) || [];
     const group = document.createElement('div');
     group.className = 'window-group';
+    group.dataset.windowId = winId;
+
+    const winKey = `window:${winId}`;
+    const winExpanded = accordionState.get(winKey) ?? false;
 
     // Window label (show only in all-windows mode)
     if (scope === 'all') {
       const label = document.createElement('div');
-      label.className = 'window-label';
       const isCurrent = winId === currentWindow.id;
-      label.innerHTML = `${isCurrent ? '現在のウィンドウ' : 'ウィンドウ'}<span class="badge">${tabs.length}個</span>`;
+      label.className = `window-label${isCurrent ? ' current' : ''}`;
+      label.dataset.windowId = winId;
+      label.innerHTML = `<span class="accordion-arrow${winExpanded ? ' expanded' : ''}">▶</span>${isCurrent ? '📌 現在のウィンドウ' : '🪟 ウィンドウ'}<span class="badge">${tabs.length}個</span>`;
+      label.style.cursor = 'pointer';
+      // Drop on window header -> append to end of that window
+      setupWindowLabelDrop(label, winId);
+      label.addEventListener('click', () => {
+        accordionState.set(winKey, !accordionState.get(winKey));
+        renderTabList();
+      });
       group.appendChild(label);
     }
 
     const list = document.createElement('div');
     list.className = 'tab-list';
+    list.dataset.windowId = winId;
 
-    for (const tab of tabs) {
-      const item = document.createElement('div');
-      item.className = 'tab-item';
+    // In all-windows mode, hide list if collapsed
+    if (scope === 'all' && !winExpanded) {
+      list.classList.add('collapsed');
+    }
 
-      const title = document.createElement('span');
-      title.className = 'tab-title';
-      title.textContent = tab.title || '(無題)';
+    // Sub-group tabs by their Chrome tab group
+    const tabsByGroup = groupTabsByTabGroup(tabs);
 
-      const url = document.createElement('span');
-      url.className = 'tab-url';
-      url.textContent = tab.url || '';
+    for (const chunk of tabsByGroup) {
+      // Render tab group header if applicable
+      if (chunk.groupId !== -1) {
+        const grpKey = `tabgroup:${chunk.groupId}`;
+        const grpExpanded = accordionState.get(grpKey) ?? false;
+        const groupInfo = await getTabGroupInfo(chunk.groupId);
 
-      item.appendChild(title);
-      item.appendChild(url);
-      item.addEventListener('click', () => {
-        chrome.windows.update(tab.windowId, { focused: true });
-        chrome.tabs.update(tab.id, { active: true });
-        window.close();
-      });
-      list.appendChild(item);
+        const container = document.createElement('div');
+        container.className = `tab-group-section tab-group-color-${groupInfo?.color || 'grey'}`;
+
+        const header = document.createElement('div');
+        header.className = `tab-group-header tab-group-color-${groupInfo?.color || 'grey'}`;
+        header.dataset.groupId = chunk.groupId;
+        header.style.cursor = 'pointer';
+        header.innerHTML = `<span class="accordion-arrow${grpExpanded ? ' expanded' : ''}">▶</span><span class="group-dot"></span>${groupInfo?.title || 'グループ'}<span class="group-badge">${chunk.tabs.length}個</span>`;
+        setupTabGroupHeaderDrop(header, chunk.groupId);
+        header.addEventListener('click', () => {
+          accordionState.set(grpKey, !accordionState.get(grpKey));
+          renderTabList();
+        });
+        container.appendChild(header);
+
+        const tabsContainer = document.createElement('div');
+        tabsContainer.className = 'tab-group-tabs';
+        if (!grpExpanded) tabsContainer.classList.add('collapsed');
+
+        for (const tab of chunk.tabs) {
+          tabsContainer.appendChild(createTabItem(tab));
+        }
+        container.appendChild(tabsContainer);
+        list.appendChild(container);
+      } else {
+        for (const tab of chunk.tabs) {
+          list.appendChild(createTabItem(tab));
+        }
+      }
     }
 
     group.appendChild(list);
     section.appendChild(group);
   }
+
+  // "New window" drop zone
+  const newWinZone = document.createElement('div');
+  newWinZone.className = 'drop-zone-new-window';
+  newWinZone.id = 'drop-zone-new-window';
+  newWinZone.textContent = '↗ 新しいウィンドウに移動';
+  setupNewWindowDrop(newWinZone);
+  section.appendChild(newWinZone);
+}
+
+function groupTabsByTabGroup(tabs) {
+  const chunks = [];
+  let current = null;
+  for (const tab of tabs) {
+    const gid = tab.groupId ?? -1;
+    if (!current || current.groupId !== gid) {
+      current = { groupId: gid, tabs: [] };
+      chunks.push(current);
+    }
+    current.tabs.push(tab);
+  }
+  return chunks;
+}
+
+function createTabItem(tab) {
+  const item = document.createElement('div');
+  item.className = 'tab-item';
+  if (tab.active) item.classList.add('active-tab');
+  item.dataset.tabId = tab.id;
+  item.dataset.windowId = tab.windowId;
+  item.dataset.index = tab.index;
+  item.draggable = true;
+
+  // Favicon
+  if (tab.favIconUrl && !tab.favIconUrl.startsWith('chrome://')) {
+    const favicon = document.createElement('img');
+    favicon.className = 'tab-favicon';
+    favicon.src = tab.favIconUrl;
+    favicon.alt = '';
+    favicon.onerror = () => {
+      favicon.replaceWith(createFaviconPlaceholder());
+    };
+    item.appendChild(favicon);
+  } else {
+    item.appendChild(createFaviconPlaceholder());
+  }
+
+  // Tab info (title + url)
+  const info = document.createElement('div');
+  info.className = 'tab-info';
+
+  const title = document.createElement('span');
+  title.className = 'tab-title';
+  title.textContent = tab.title || '(無題)';
+
+  const url = document.createElement('span');
+  url.className = 'tab-url';
+  url.textContent = tab.url || '';
+
+  info.appendChild(title);
+  info.appendChild(url);
+  item.appendChild(info);
+
+  // Click to activate tab
+  item.addEventListener('click', (e) => {
+    if (e.defaultPrevented) return;
+    chrome.windows.update(tab.windowId, { focused: true });
+    chrome.tabs.update(tab.id, { active: true });
+    if (!isSidePanel) window.close();
+  });
+
+  // D&D events
+  setupTabItemDrag(item);
+
+  return item;
+}
+
+function createFaviconPlaceholder() {
+  const el = document.createElement('div');
+  el.className = 'tab-favicon-placeholder';
+  return el;
+}
+
+// --- Drag & Drop ---
+
+let dragData = null;
+
+function setupTabItemDrag(item) {
+  item.addEventListener('dragstart', (e) => {
+    dragData = {
+      tabId: parseInt(item.dataset.tabId),
+      windowId: parseInt(item.dataset.windowId),
+      index: parseInt(item.dataset.index),
+    };
+    item.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', item.dataset.tabId);
+    // Show "new window" drop zone
+    const zone = document.getElementById('drop-zone-new-window');
+    if (zone) zone.classList.add('visible');
+  });
+
+  item.addEventListener('dragend', () => {
+    item.classList.remove('dragging');
+    dragData = null;
+    // Hide "new window" drop zone
+    const zone = document.getElementById('drop-zone-new-window');
+    if (zone) zone.classList.remove('visible');
+    // Clean up indicators
+    document.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+  });
+
+  item.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dragData || parseInt(item.dataset.tabId) === dragData.tabId) return;
+
+    // Show drop indicator
+    const rect = item.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const position = e.clientY < midY ? 'before' : 'after';
+
+    // Remove existing indicators in this list
+    item.closest('.tab-list')?.querySelectorAll('.drop-indicator').forEach(el => el.remove());
+
+    const indicator = document.createElement('div');
+    indicator.className = 'drop-indicator';
+    if (position === 'before') {
+      item.parentNode.insertBefore(indicator, item);
+    } else {
+      item.parentNode.insertBefore(indicator, item.nextSibling);
+    }
+  });
+
+  item.addEventListener('dragleave', () => {
+    // Indicators cleaned up on next dragover or dragend
+  });
+
+  item.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    if (!dragData) return;
+
+    const targetTabId = parseInt(item.dataset.tabId);
+    const targetWindowId = parseInt(item.dataset.windowId);
+    const targetIndex = parseInt(item.dataset.index);
+    if (dragData.tabId === targetTabId) return;
+
+    // Determine drop position
+    const rect = item.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const insertAfter = e.clientY >= midY;
+
+    let newIndex = insertAfter ? targetIndex + 1 : targetIndex;
+    // If moving within same window and from a higher index, adjust
+    if (dragData.windowId === targetWindowId && dragData.index < targetIndex) {
+      newIndex = Math.max(0, newIndex - 1);
+    }
+
+    try {
+      if (dragData.windowId === targetWindowId) {
+        await chrome.tabs.move(dragData.tabId, { index: newIndex });
+      } else {
+        await chrome.tabs.move(dragData.tabId, { windowId: targetWindowId, index: newIndex });
+      }
+      showStatus('タブを移動しました');
+    } catch (err) {
+      showStatus('移動に失敗しました', 'error');
+    }
+
+    dragData = null;
+    renderTabList();
+  });
+}
+
+function setupWindowLabelDrop(label, windowId) {
+  label.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    label.classList.add('drag-over');
+  });
+
+  label.addEventListener('dragleave', () => {
+    label.classList.remove('drag-over');
+  });
+
+  label.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    label.classList.remove('drag-over');
+    if (!dragData || dragData.windowId === windowId) return;
+
+    try {
+      await chrome.tabs.move(dragData.tabId, { windowId, index: -1 });
+      showStatus('タブを別ウィンドウに移動しました');
+    } catch {
+      showStatus('移動に失敗しました', 'error');
+    }
+
+    dragData = null;
+    renderTabList();
+  });
+}
+
+function setupTabGroupHeaderDrop(header, groupId) {
+  header.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    header.classList.add('drag-over');
+  });
+
+  header.addEventListener('dragleave', () => {
+    header.classList.remove('drag-over');
+  });
+
+  header.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    header.classList.remove('drag-over');
+    if (!dragData) return;
+
+    try {
+      await chrome.tabs.group({ tabIds: [dragData.tabId], groupId });
+      showStatus('タブをグループに移動しました');
+    } catch {
+      showStatus('グループ移動に失敗しました', 'error');
+    }
+
+    dragData = null;
+    renderTabList();
+  });
+}
+
+function setupNewWindowDrop(zone) {
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    zone.classList.add('drag-over');
+  });
+
+  zone.addEventListener('dragleave', () => {
+    zone.classList.remove('drag-over');
+  });
+
+  zone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if (!dragData) return;
+
+    try {
+      await chrome.windows.create({ tabId: dragData.tabId });
+      showStatus('新しいウィンドウに移動しました');
+    } catch {
+      showStatus('移動に失敗しました', 'error');
+    }
+
+    dragData = null;
+    renderTabList();
+  });
+}
+
+// --- Side panel ---
+
+async function openSidePanel() {
+  const currentWindow = await chrome.windows.getCurrent();
+  chrome.runtime.sendMessage({ action: 'openSidePanel', windowId: currentWindow.id });
+  window.close();
 }
 
 // --- Favorites ---

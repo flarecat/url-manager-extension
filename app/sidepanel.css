@@ -1,0 +1,12 @@
+/* Side panel overrides */
+body.sidepanel {
+  width: 100%;
+}
+
+body.sidepanel .tab-list {
+  max-height: none;
+}
+
+body.sidepanel .fav-list {
+  max-height: none;
+}
