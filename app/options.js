@@ -1,4 +1,17 @@
-document.addEventListener('DOMContentLoaded', render);
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('add-new').addEventListener('click', addNewFavorite);
+  render();
+});
+
+async function addNewFavorite() {
+  const { favorites = [] } = await chrome.storage.sync.get('favorites');
+  favorites.push({ name: '', urls: ['https://'], createdAt: Date.now() });
+  await chrome.storage.sync.set({ favorites });
+  render();
+  // Focus the new card's name input
+  const names = document.querySelectorAll('.fav-card-name');
+  if (names.length > 0) names[names.length - 1].focus();
+}
 
 async function render() {
   const editor = document.getElementById('fav-editor');
