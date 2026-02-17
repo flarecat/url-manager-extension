@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>URL Manager</h1>
+  </header>
+  <main>
+    <section class="section">
+      <div class="scope-toggle">
+        <button id="scope-current" class="scope-btn active">現在のウィンドウ</button>
+        <button id="scope-all" class="scope-btn">全てのウィンドウ</button>
+      </div>
+      <button id="copy-all" class="btn btn-primary">全てのURLをコピー</button>
+      <button id="copy-current" class="btn">現在のタブのURLをコピー</button>
+    </section>
+    <hr>
+    <section class="section">
+      <button id="restore" class="btn">クリップボードからタブを復元</button>
+    </section>
+    <hr>
+    <section class="section">
+      <button id="sort-by-url" class="btn">タブをURL順に並び替え</button>
+      <button id="close-duplicates" class="btn">重複タブを閉じる</button>
+      <button id="close-others" class="btn btn-danger">他のタブを全て閉じる</button>
+    </section>
+    <hr>
+    <section class="section" id="tab-section"></section>
+  </main>
+  <footer>
+    <div id="status" class="status"></div>
+  </footer>
+  <script src="popup.js"></script>
+</body>
+</html>
